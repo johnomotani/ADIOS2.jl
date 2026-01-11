@@ -256,14 +256,20 @@ end
 
 export adios_all_variable_names
 """
-    vars = adios_all_variable_names(file::AdiosFile)
+    vars = adios_all_variable_names(file::AdiosFile, has_steps::Bool=false)
     vars::Vector{String}
 
 List (recursively) all variables in the file.
+
+If `has_steps` is `true`, only returns variables that were written at
+more than one step.
 """
-function adios_all_variable_names(file::AdiosFile)
+function adios_all_variable_names(file::AdiosFile, has_steps::Bool=false)
     vars = inquire_all_variables(file.io)
     vars ≡ nothing && return String[]
+    if has_steps
+        vars = [v for v ∈ vars if steps(v) > 1]
+    end
     return name.(vars)
 end
 
@@ -333,6 +339,7 @@ end
 export adios_get
 """
     ioref = adios_get(file::AdiosFile, name::AbstractString; start=nothing, count=nothing)
+    ioref = adios_get(file::AdiosFile, var::Variable; start=nothing, count=nothing)
     ioref::Union{Nothing,IORef}
 
 Schedule reading a variable from a file.
@@ -345,9 +352,13 @@ and then executing the reads together.
 `start` and `counts` can be used to select a subset of the data, as
 defined by [`set_selection`](@ref).
 """
+function adios_get end
 function adios_get(file::AdiosFile, name::AbstractString; start=nothing, count=nothing)
     var = inquire_variable(file.io, name)
     var ≡ nothing && return nothing
+    return adios_get(file, var; start, count)
+end
+function adios_get(file::AdiosFile, var::Variable; start=nothing, count=nothing)
     T = type(var)
     T ≡ nothing && return nothing
     D = ndims(var)
