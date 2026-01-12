@@ -249,9 +249,9 @@ end
         all_data = adios_load(file)
 
         @test all_data["scalar"] == [scalar]
-        @test all_data["vector"] == repeat(vector, 1, 1)
-        @test all_data["matrix"] == repeat(matrix, 1, 1, 1)
-        @test all_data["array3D"] == repeat(array3D, 1, 1, 1, 1)
+        @test all_data["vector"] == vector
+        @test all_data["matrix"] == matrix
+        @test all_data["array3D"] == array3D
 
         @test all_data["step_A"] == 0:(Nsteps_A - 1)
         @test all_data["scalar_A"] == fill(scalar, Nsteps_A)
@@ -320,10 +320,11 @@ end
         file = adios_open_serial(bpName, mode_readRandomAccess)
 
         # single variable, all steps
-        @test adios_load(file, "vector") == repeat(vector, 1, 1)
-        @test adios_load(file, "vector"; start=(2,)) == repeat(vector[2:end], 1, 1)
-        @test adios_load(file, "vector"; count=(2,)) == repeat(vector[1:2], 1, 1)
-        @test adios_load(file, "vector"; start=(2,), count=(2,)) == repeat(vector[2:3], 1, 1)
+        @test adios_load(file, "scalar") == [scalar]
+        @test adios_load(file, "vector") == vector
+        @test adios_load(file, "vector"; start=(2,)) == vector[2:end]
+        @test adios_load(file, "vector"; count=(2,)) == vector[1:2]
+        @test adios_load(file, "vector"; start=(2,), count=(2,)) == vector[2:3]
 
         @test adios_load(file, "step_A") == 0:(Nsteps_A - 1)
         @test adios_load(file, "vector_A") == repeat(vector, 1, Nsteps_A)
@@ -382,7 +383,7 @@ end
 
         # mulitiple variables, all steps
         @test adios_load(file, ["vector", "step_A", "vector_A", "step_B", "vector_B"]) ==
-              Dict("vector" => repeat(vector, 1, 1),
+              Dict("vector" => vector,
                    "step_A" => 0:(Nsteps_A - 1),
                    "vector_A" => repeat(vector, 1, Nsteps_A),
                    "step_B" => 0:(Nsteps_B - 1),

@@ -91,7 +91,7 @@ function adios_load(file::AdiosFile, varName::AbstractString; start=nothing, cou
         error("Variable '$varName' not found in the file")
     end
     Nsteps = steps(variable)
-    if Nsteps == 0
+    if Nsteps ≤ 1
         return adios_load(file, variable, Val{:no_step}; start, count)
     else
         step_list = 0:(Nsteps - 1)
@@ -99,19 +99,19 @@ function adios_load(file::AdiosFile, varName::AbstractString; start=nothing, cou
     end
 end
 
-function adios_load(file::AdiosFile,
-                    varNames::Union{AbstractArray{<:AbstractString},Regex})
-    Nsteps = steps(file.engine)
-    if Nsteps == 0
-        return adios_load(file, varNames, Val{:no_step})
-    else
-        return adios_load(file, varNames, Val{:all_steps})
-    end
-end
-
 function adios_load(file::AdiosFile, varName::AbstractString, step::Integer;
                     start=nothing, count=nothing)
     return adios_load(file, varName, [step]; start, count)
+end
+
+function adios_load(file::AdiosFile, name_pattern::Regex)
+    varNames = filter(x -> occursin(name_pattern, x),
+                      adios_all_variable_names(file))
+    if length(varNames) == 1
+        return adios_load(file, varNames[1])
+    else
+        return adios_load(file, varNames)
+    end
 end
 
 function adios_load(file::AdiosFile,
@@ -157,6 +157,28 @@ function adios_load(file::AdiosFile, variable::Variable,
 end
 
 # Main fallback function to load mulitple variables
+function adios_load(file::AdiosFile, varNames::AbstractArray{<:AbstractString})
+    @assert openmode(file.engine) === mode_readRandomAccess "File must be opened with `mode_readRandomAccess`"
+
+    varNames = filter_available_variables(file, varNames)
+
+    # Schedule reading for all requested variables
+    Dict_iorefs = Dict{AbstractString,Any}()
+    for varName in varNames
+        variable = inquire_variable(file.io, varName)
+        Dict_iorefs[varName] = _schedule_tasks_randomAccess(file, variable)
+    end
+
+    # Perform all reads at once
+    perform_gets(file.engine)
+
+    results = Dict{AbstractString,Any}()
+    for varName in varNames
+        results[varName] = _normalize_data_shape(Dict_iorefs[varName])
+    end
+
+    return results
+end
 function adios_load(file::AdiosFile, varNames::AbstractArray{<:AbstractString},
                     step_list::AbstractArray{<:Integer})
     @assert openmode(file.engine) === mode_readRandomAccess "File must be opened with `mode_readRandomAccess`"
@@ -200,29 +222,6 @@ function adios_load(file::AdiosFile, varName::AbstractString,
     Nsteps = steps(variable)
     step_list = 0:(Nsteps - 1)
     return adios_load(file, variable, step_list; start=nothing, count=nothing)
-end
-
-function adios_load(file::AdiosFile, varNames::AbstractArray{<:AbstractString},
-                    steps_type::Union{Type{Val{:no_step}},Type{Val{:all_steps}}})
-    varNames = filter_available_variables(file, varNames)
-
-    results = Dict{AbstractString,Any}()
-    for varName in varNames
-        results[varName] = adios_load(file, varName, steps_type)
-    end
-
-    return results
-end
-
-function adios_load(file::AdiosFile, name_pattern::Regex,
-                    steps_type::Union{Type{Val{:no_step}},Type{Val{:all_steps}}})
-    varNames = filter(x -> occursin(name_pattern, x),
-                      adios_all_variable_names(file))
-    if length(varNames) == 1
-        return adios_load(file, varNames[1], steps_type)
-    else
-        return adios_load(file, varNames, steps_type)
-    end
 end
 
 # Convenience dispatches for loading from a file path or directory
@@ -405,6 +404,47 @@ function _schedule_tasks_randomAccess(file::AdiosFile, var::Variable,
 
     ioref = IORef{T,D + 1}(file.engine,
                            Array{T,D + 1}(undef, (sh..., length(step_list))))
+    get(file.engine, var, ioref.array)
+    push!(file.engine.get_tasks, () -> (ioref.engine = nothing))
+
+    if start !== nothing || count !== nothing
+        # Unset selection on variable to avoid messing up future operations.
+        zero_start = ntuple(i->0, D)
+        set_selection(var, zero_start, Int.(orig_sh))
+    end
+
+    return ioref
+end
+
+function _schedule_tasks_randomAccess(file::AdiosFile, var::Variable; start=nothing,
+                                      count=nothing)
+
+    T, D, sh = _get_var_type_ndims_shape(var)
+
+    if start !== nothing || count !== nothing
+        if start === nothing
+            start = ntuple(i->0, D)
+        else
+            # Convert `start` to 0-based indexing
+            start = start .- 1
+        end
+        if count === nothing
+            count = ntuple(i->(Int(sh[i]) - start[i]), D)
+        end
+        set_selection(var, start, count)
+        orig_sh = sh
+        sh = count
+    end
+
+    Nsteps = steps(var)
+    if Nsteps > 1
+        # For all steps, create a single IORef
+        set_step_selection(var, 0, Nsteps)
+        sh = tuple(sh..., Nsteps)
+        D += 1
+    end
+
+    ioref = IORef{T,D}(file.engine, Array{T,D}(undef, sh))
     get(file.engine, var, ioref.array)
     push!(file.engine.get_tasks, () -> (ioref.engine = nothing))
 
