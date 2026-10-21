@@ -302,12 +302,14 @@ end
 # Schedule variable reading tasks in mode_readRandomAccess for specified steps.
 # Returns array of IORef objects ready for batch processing.
 function _schedule_tasks_randomAccess(file::AdiosFile, varName::AbstractString,
-                                      steps::AbstractArray{<:Integer}; start=nothing,
+                                      step_list::AbstractArray{<:Integer}; start=nothing,
                                       count=nothing)
     var = inquire_variable(file.io, varName)
     if var === nothing
         error("Variable '$varName' not found in the file")
     end
+    @assert minimum(step_list) >= 0 "Steps must be non-negative integers"
+    @assert maximum(step_list) < steps(var) "Steps must be less than total steps for $varName"
     T, D, sh = _get_var_type_ndims_shape(var)
 
     if start !== nothing || count !== nothing
@@ -327,8 +329,8 @@ function _schedule_tasks_randomAccess(file::AdiosFile, varName::AbstractString,
 
     # Schedule reading for all requested steps
     iorefs = IORef[]
-    sizehint!(iorefs, length(steps))
-    for step in steps
+    sizehint!(iorefs, length(step_list))
+    for step in step_list
         set_step_selection(var, step, 1)
 
         # Schedule reading data for the current step
@@ -350,8 +352,6 @@ end
 function _schedule_tasks_randomAccess(file::AdiosFile, varName::AbstractString,
                                       step_list::Union{UnitRange{<:Integer},Nothing};
                                       start=nothing, count=nothing)
-    @assert step_list === nothing || minimum(step_list) >= 0 "Steps must be non-negative integers"
-    @assert step_list === nothing || maximum(step_list) < steps(file.engine) "Steps must be less than total steps"
 
     var = inquire_variable(file.io, varName)
     if var === nothing
@@ -359,6 +359,9 @@ function _schedule_tasks_randomAccess(file::AdiosFile, varName::AbstractString,
     end
     if step_list === nothing
         step_list = 0:steps(var)-1
+    else
+        @assert minimum(step_list) >= 0 "Steps must be non-negative integers"
+        @assert maximum(step_list) < steps(var) "Steps must be less than total steps for $varName"
     end
     T, D, sh = _get_var_type_ndims_shape(var)
 
