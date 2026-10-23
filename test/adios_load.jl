@@ -32,7 +32,7 @@
             i > 3 && adios_put!(file, "scalar_B", scalar)
             i < 9 && adios_put!(file, "abc_scalar23", scalar)
             i ∈ 2:7 && adios_put!(file, "scalar234", scalar)
-            adios_put!(file, "deep/in/nested/groups/scalar", scalar)
+            i ∈ [1, 2, 4, 7, 8, 9] && adios_put!(file, "deep/in/nested/groups/scalar", scalar)
             adios_put!(file, "another/deep/in/nested/groups/scalar", scalar)
 
             adios_perform_puts!(file)
@@ -60,7 +60,7 @@
         @test all_data["scalar_B"] == fill(scalar, Nsteps - 4)
         @test all_data["abc_scalar23"] == fill(scalar, Nsteps - 1)
         @test all_data["scalar234"] == fill(scalar, 6)
-        @test all_data["deep/in/nested/groups/scalar"] == fill(scalar, Nsteps)
+        @test all_data["deep/in/nested/groups/scalar"] == fill(scalar, 6)
         @test all_data["another/deep/in/nested/groups/scalar"] ==
               fill(scalar, Nsteps)
 
@@ -157,7 +157,7 @@
                    "scalar234" => fill(scalar, 6))
 
         @test adios_load(file, r"deep.*scalar") ==
-              Dict("deep/in/nested/groups/scalar" => fill(scalar, Nsteps),
+              Dict("deep/in/nested/groups/scalar" => fill(scalar, 6),
                    "another/deep/in/nested/groups/scalar" => fill(scalar, Nsteps))
 
         close(file)
